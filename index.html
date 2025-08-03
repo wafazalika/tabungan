@@ -182,8 +182,23 @@
         });
       
         // Ambil dan tampilkan data awal dari Firestore
-        fetchTabungan();
-      
+        import { onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+            // Ganti fetchTabungan dengan ini untuk realtime listener
+            function listenTabunganRealtime() {
+            const q = query(collection(db, "tabungan"), orderBy("date", "desc"));
+            onSnapshot(q, (querySnapshot) => {
+                tabunganData = [];
+                querySnapshot.forEach(docSnap => {
+                tabunganData.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                renderTabungan();
+            });
+            }
+
+            // Panggil fungsi ini sekali saja setelah init Firebase
+            listenTabunganRealtime();
+
         // Fungsi simpan tabungan ke Firestore
         async function saveTabungan(e) {
           e.preventDefault();
