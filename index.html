@@ -135,9 +135,29 @@
         </div>
     </div>
 
-    <script>
-        // Data tabungan akan disimpan di localStorage
-        const TABUNGAN_KEY = 'tabunganData';
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        
+        // Konfigurasi Firebase (ganti dengan config kamu)
+        const firebaseConfig = {
+          apiKey: "AIzaSyCZIozaSxXnVs2HMDYx4UI15SZvB8FrJT0",
+          authDomain: "tabungan-77ec7.firebaseapp.com",
+          projectId: "tabungan-77ec7",
+          storageBucket: "tabungan-77ec7.appspot.com",
+          messagingSenderId: "466708761136",
+          appId: "1:466708761136:web:360461a2490c296f4d3bf5",
+          measurementId: "G-8FHE7ZX1ZE"
+        };
+      
+        // Inisialisasi Firebase dan Firestore
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+      
+        // Variabel global untuk simpan data tabungan dari Firestore
+        let tabunganData = [];
+      
+        // DOM elements
         const tabunganForm = document.getElementById('tabunganForm');
         const amountInput = document.getElementById('amount');
         const dateInput = document.getElementById('date');
@@ -149,13 +169,10 @@
         const filterToggle = document.getElementById('filterToggle');
         const filterDropdown = document.getElementById('filterDropdown');
         let tabunganChart = null;
-
+      
         // Set default date ke hari ini
         dateInput.valueAsDate = new Date();
-
-        // Inisialisasi data tabungan
-        let tabunganData = JSON.parse(localStorage.getItem(TABUNGAN_KEY)) || [];
-
+      
         // Event listeners
         tabunganForm.addEventListener('submit', saveTabungan);
         filterToggle.addEventListener('click', toggleFilterDropdown);
@@ -163,250 +180,262 @@
         document.querySelectorAll('input[name="filter"]').forEach(radio => {
             radio.addEventListener('change', filterTabungan);
         });
-
-        // Tampilkan data saat pertama kali di-load
-        renderTabungan();
-
-        // Fungsi untuk menyimpan tabungan baru
-        function saveTabungan(e) {
-            e.preventDefault();
-            
-            const amount = parseInt(amountInput.value);
-            const date = dateInput.value;
-            const note = noteInput.value;
-            
-            if (!amount || amount <= 0) {
-                alert('Jumlah tabungan harus diisi dengan angka positif');
-                return;
-            }
-            
-            if (!date) {
-                alert('Tanggal harus diisi');
-                return;
-            }
-            
-            const newTabungan = {
-                id: Date.now(),
-                amount,
-                date,
-                note: note || 'Tanpa catatan'
-            };
-            
-            tabunganData.push(newTabungan);
-            localStorage.setItem(TABUNGAN_KEY, JSON.stringify(tabunganData));
-            
+      
+        // Ambil dan tampilkan data awal dari Firestore
+        fetchTabungan();
+      
+        // Fungsi simpan tabungan ke Firestore
+        async function saveTabungan(e) {
+          e.preventDefault();
+      
+          const amount = parseInt(amountInput.value);
+          const date = dateInput.value;
+          const note = noteInput.value || "Tanpa catatan";
+      
+          if (!amount || amount <= 0) {
+            alert('Jumlah tabungan harus diisi dengan angka positif');
+            return;
+          }
+      
+          if (!date) {
+            alert('Tanggal harus diisi');
+            return;
+          }
+      
+          try {
+            await addDoc(collection(db, "tabungan"), {
+              amount,
+              date,
+              note
+            });
+      
             // Reset form
             amountInput.value = '';
             noteInput.value = '';
             dateInput.valueAsDate = new Date();
-            
-            // Update tampilan
+      
+            // Ambil ulang data dan render
+            fetchTabungan();
+      
+            showAlert('Tabungan berhasil disimpan!', 'green');
+      
+          } catch (error) {
+            alert('Gagal menyimpan data: ' + error.message);
+          }
+        }
+      
+        // Fungsi ambil data tabungan dari Firestore
+        async function fetchTabungan() {
+          try {
+            const q = query(collection(db, "tabungan"), orderBy("date", "desc"));
+            const querySnapshot = await getDocs(q);
+            tabunganData = [];
+            querySnapshot.forEach(docSnap => {
+              tabunganData.push({ id: docSnap.id, ...docSnap.data() });
+            });
             renderTabungan();
-            
-            // Animasi
-            const savedAlert = document.createElement('div');
-            savedAlert.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg fade-in';
-            savedAlert.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Tabungan berhasil disimpan!';
-            document.body.appendChild(savedAlert);
-            
-            setTimeout(() => {
-                savedAlert.classList.remove('fade-in');
-                savedAlert.classList.add('fade-out');
-                setTimeout(() => savedAlert.remove(), 500);
-            }, 3000);
+          } catch (error) {
+            alert('Gagal mengambil data: ' + error.message);
+          }
         }
-
-        // Fungsi untuk menampilkan data tabungan
+      
+        // Fungsi hapus data tabungan di Firestore
+        async function deleteTabungan(e) {
+          const idToDelete = e.currentTarget.getAttribute('data-id');
+          if (confirm('Anda yakin ingin menghapus catatan tabungan ini?')) {
+            try {
+              await deleteDoc(doc(db, "tabungan", idToDelete));
+              fetchTabungan();
+              showAlert('Tabungan berhasil dihapus!', 'red');
+            } catch (error) {
+              alert('Gagal menghapus data: ' + error.message);
+            }
+          }
+        }
+      
+        // Fungsi render data tabungan di UI
         function renderTabungan(filter = 'all') {
-            let filteredData = [...tabunganData];
-            
-            if (filter === 'week') {
-                const oneWeekAgo = new Date();
-                oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-                filteredData = filteredData.filter(item => new Date(item.date) >= oneWeekAgo);
-            } else if (filter === 'month') {
-                const oneMonthAgo = new Date();
-                oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-                filteredData = filteredData.filter(item => new Date(item.date) >= oneMonthAgo);
-            }
-            
-            // Urutkan berdasarkan tanggal terbaru
-            filteredData.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            if (filteredData.length === 0) {
-                tabunganList.innerHTML = `
-                    <div class="text-center py-10 text-gray-400">
-                        <i class="fas fa-piggy-bank text-4xl mb-2"></i>
-                        <p>Belum ada catatan tabungan</p>
-                    </div>
-                `;
-            } else {
-                tabunganList.innerHTML = '';
-                filteredData.forEach(item => {
-                    const date = new Date(item.date);
-                    const formattedDate = date.toLocaleDateString('id-ID', {
-                        weekday: 'long',
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric'
-                    });
-                    
-                    const tabunganItem = document.createElement('div');
-                    tabunganItem.className = 'bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500 flex justify-between items-center fade-in';
-                    tabunganItem.innerHTML = `
-                        <div>
-                            <h3 class="font-semibold text-blue-600">${item.note}</h3>
-                            <p class="text-sm text-gray-500">${formattedDate}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="font-bold text-green-600">+ Rp ${item.amount.toLocaleString('id-ID')}</p>
-                            <button data-id="${item.id}" class="text-red-500 hover:text-red-700 text-sm delete-btn">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        </div>
-                    `;
-                    tabunganList.appendChild(tabunganItem);
-                });
-                
-                // Tambahkan event listener untuk tombol delete
-                document.querySelectorAll('.delete-btn').forEach(btn => {
-                    btn.addEventListener('click', deleteTabungan);
-                });
-            }
-            
-            updateStatistics(filteredData);
-            renderChart(filteredData);
+          let filteredData = [...tabunganData];
+      
+          if (filter === 'week') {
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            filteredData = filteredData.filter(item => new Date(item.date) >= oneWeekAgo);
+          } else if (filter === 'month') {
+            const oneMonthAgo = new Date();
+            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+            filteredData = filteredData.filter(item => new Date(item.date) >= oneMonthAgo);
+          }
+      
+          filteredData.sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+          if (filteredData.length === 0) {
+            tabunganList.innerHTML = `
+                <div class="text-center py-10 text-gray-400">
+                    <i class="fas fa-piggy-bank text-4xl mb-2"></i>
+                    <p>Belum ada catatan tabungan</p>
+                </div>
+            `;
+          } else {
+            tabunganList.innerHTML = '';
+            filteredData.forEach(item => {
+              const date = new Date(item.date);
+              const formattedDate = date.toLocaleDateString('id-ID', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+              });
+      
+              const tabunganItem = document.createElement('div');
+              tabunganItem.className = 'bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500 flex justify-between items-center fade-in';
+              tabunganItem.innerHTML = `
+                  <div>
+                      <h3 class="font-semibold text-blue-600">${item.note}</h3>
+                      <p class="text-sm text-gray-500">${formattedDate}</p>
+                  </div>
+                  <div class="text-right">
+                      <p class="font-bold text-green-600">+ Rp ${item.amount.toLocaleString('id-ID')}</p>
+                      <button data-id="${item.id}" class="text-red-500 hover:text-red-700 text-sm delete-btn">
+                          <i class="fas fa-trash-alt"></i>
+                      </button>
+                  </div>
+              `;
+              tabunganList.appendChild(tabunganItem);
+            });
+      
+            // Pasang event listener untuk tombol delete
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+              btn.addEventListener('click', deleteTabungan);
+            });
+          }
+      
+          updateStatistics(filteredData);
+          renderChart(filteredData);
         }
-
-        // Fungsi untuk menghapus tabungan
-        function deleteTabungan(e) {
-            const idToDelete = parseInt(e.currentTarget.getAttribute('data-id'));
-            
-            if (confirm('Anda yakin ingin menghapus catatan tabungan ini?')) {
-                tabunganData = tabunganData.filter(item => item.id !== idToDelete);
-                localStorage.setItem(TABUNGAN_KEY, JSON.stringify(tabunganData));
-                renderTabungan();
-                
-                // Animasi
-                const deletedAlert = document.createElement('div');
-                deletedAlert.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg fade-in';
-                deletedAlert.innerHTML = '<i class="fas fa-trash-alt mr-2"></i> Tabungan berhasil dihapus!';
-                document.body.appendChild(deletedAlert);
-                
-                setTimeout(() => {
-                    deletedAlert.classList.remove('fade-in');
-                    deletedAlert.classList.add('fade-out');
-                    setTimeout(() => deletedAlert.remove(), 500);
-                }, 3000);
-            }
-        }
-
-        // Fungsi untuk memperbarui statistik
+      
+        // Fungsi update statistik
         function updateStatistics(data) {
-            const total = data.reduce((sum, item) => sum + item.amount, 0);
-            const days = new Set(data.map(item => item.date)).size;
-            const avg = days > 0 ? Math.round(total / days) : 0;
-            
-            totalTabungan.textContent = `Rp ${total.toLocaleString('id-ID')}`;
-            rataTabungan.textContent = `Rp ${avg.toLocaleString('id-ID')}`;
-            hariMenabung.textContent = data.length;
+          const total = data.reduce((sum, item) => sum + item.amount, 0);
+          const days = new Set(data.map(item => item.date)).size;
+          const avg = days > 0 ? Math.round(total / days) : 0;
+      
+          totalTabungan.textContent = `Rp ${total.toLocaleString('id-ID')}`;
+          rataTabungan.textContent = `Rp ${avg.toLocaleString('id-ID')}`;
+          hariMenabung.textContent = data.length;
         }
-
-        // Fungsi untuk menampilkan grafik
+      
+        // Fungsi render chart menggunakan Chart.js
         function renderChart(data) {
-            const ctx = document.getElementById('tabunganChart').getContext('2d');
-            
-            // Kelompokkan data per minggu
-            const weeklyData = {};
-            data.forEach(item => {
-                const date = new Date(item.date);
-                const year = date.getFullYear();
-                const week = getWeekNumber(date);
-                const key = `${year}-W${week}`;
-                
-                if (!weeklyData[key]) {
-                    weeklyData[key] = {
-                        label: `Minggu ${week}`,
-                        total: 0,
-                        date: firstDayOfWeek(date)
-                    };
-                }
-                weeklyData[key].total += item.amount;
-            });
-            
-            // Konversi ke array dan urutkan berdasarkan tanggal
-            const chartData = Object.values(weeklyData).sort((a, b) => a.date - b.date);
-            
-            if (tabunganChart) {
-                tabunganChart.destroy();
+          const ctx = document.getElementById('tabunganChart').getContext('2d');
+      
+          const weeklyData = {};
+          data.forEach(item => {
+            const date = new Date(item.date);
+            const year = date.getFullYear();
+            const week = getWeekNumber(date);
+            const key = `${year}-W${week}`;
+      
+            if (!weeklyData[key]) {
+              weeklyData[key] = {
+                label: `Minggu ${week}`,
+                total: 0,
+                date: firstDayOfWeek(date)
+              };
             }
-            
-            tabunganChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: chartData.map(item => item.label),
-                    datasets: [{
-                        label: 'Tabungan per Minggu',
-                        data: chartData.map(item => item.total),
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return 'Rp ' + value.toLocaleString('id-ID');
-                                }
-                            }
-                        }
-                    },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return 'Total: Rp ' + context.raw.toLocaleString('id-ID');
-                                }
-                            }
-                        }
+            weeklyData[key].total += item.amount;
+          });
+      
+          const chartData = Object.values(weeklyData).sort((a, b) => a.date - b.date);
+      
+          if (tabunganChart) {
+            tabunganChart.destroy();
+          }
+      
+          tabunganChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: chartData.map(item => item.label),
+              datasets: [{
+                label: 'Tabungan per Minggu',
+                data: chartData.map(item => item.total),
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+              }]
+            },
+            options: {
+              responsive: true,
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    callback: function(value) {
+                      return 'Rp ' + value.toLocaleString('id-ID');
                     }
+                  }
                 }
-            });
+              },
+              plugins: {
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      return 'Total: Rp ' + context.raw.toLocaleString('id-ID');
+                    }
+                  }
+                }
+              }
+            }
+          });
         }
-
-        // Helper function untuk mendapatkan nomor minggu
+      
+        // Helper nomor minggu
         function getWeekNumber(date) {
-            const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-            const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
-            return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+          const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+          const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+          return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
         }
-
-        // Helper function untuk mendapatkan hari pertama minggu
+      
+        // Helper hari pertama minggu
         function firstDayOfWeek(date) {
-            const day = date.getDay();
-            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-            return new Date(date.setDate(diff));
+          const day = date.getDay();
+          const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+          return new Date(date.setDate(diff));
         }
-
-        // Fungsi untuk filter dropdown
+      
+        // Toggle filter dropdown
         function toggleFilterDropdown(e) {
-            e.stopPropagation();
-            filterDropdown.classList.toggle('hidden');
+          e.stopPropagation();
+          filterDropdown.classList.toggle('hidden');
         }
-
+      
+        // Tutup filter dropdown saat klik di luar
         function closeFilterDropdown() {
-            filterDropdown.classList.add('hidden');
+          filterDropdown.classList.add('hidden');
         }
-
+      
+        // Filter tabungan saat filter diubah
         function filterTabungan(e) {
-            renderTabungan(e.target.value);
-            closeFilterDropdown();
+          renderTabungan(e.target.value);
+          closeFilterDropdown();
         }
-    </script>
+      
+        // Fungsi alert animasi
+        function showAlert(message, color) {
+          const alertDiv = document.createElement('div');
+          alertDiv.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg fade-in`;
+          alertDiv.style.backgroundColor = color === 'green' ? '#22c55e' : '#ef4444';
+          alertDiv.style.color = 'white';
+          alertDiv.innerHTML = message;
+          document.body.appendChild(alertDiv);
+          setTimeout(() => {
+            alertDiv.classList.remove('fade-in');
+            alertDiv.classList.add('fade-out');
+            setTimeout(() => alertDiv.remove(), 500);
+          }, 3000);
+        }
+      </script>
+          
 </body>
 </html>
 
